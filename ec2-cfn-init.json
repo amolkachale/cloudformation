@@ -1,0 +1,112 @@
+{ 
+
+   "AWSTemplateFormatVersion": "2010-09-09",
+   "Description": "**Version 1.0** This template creates web server",
+
+   "Parameters":{ 
+         "AMIID" : {
+            "Type" : "String",
+            "Description" : "Enter AMIID  for creating new EC2 instance."
+         },
+
+         "InstanceType" : {
+            "Type" : "String",
+            "Default" : "t2.micro",
+            "AllowedValues" : ["t2.micro", "t2.small", "t2.large"],
+            "Description" : "Enter t2.micro, t2.small, or t2.large. Default is t2.micro."
+         },
+
+         "KeyName": {
+            "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "ConstraintDescription" : "must be the name of an existing EC2 KeyPair."
+          }
+   },
+   "Resources":{ 
+    "WebSecurityGroup" : {
+        "Type" : "AWS::EC2::SecurityGroup",
+        "Properties" : {
+          "GroupDescription" : "Enable traffic over port 8080 for webserver",
+          "SecurityGroupIngress" : [ {
+            "IpProtocol" : "tcp",
+            "FromPort" : "8080",
+            "ToPort" : "8080",
+            "CidrIp" : "0.0.0.0/0"
+          }
+        ]
+        }
+      },
+
+    "WebServer":{ 
+        "Type":"AWS::EC2::Instance",
+        "Metadata": {
+            "AWS::CloudFormation::Init": {
+                "configSets" : {
+                    "InstallAndRun" : [ "Install" ]
+                  },
+                "Install":{
+                    "packages": {
+                        "yum": {
+                                "java-1.8.0-openjdk": [],
+                                "tomcat": [],
+                                "tomcat-webapps": []
+                        }
+                    },
+                    "services": {
+                        "sysvinit": {
+                            "tomcat": {
+                                "enabled": true,
+                                "ensureRunning": true
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "CreationPolicy": {
+            "ResourceSignal": {
+                "Timeout": "PT5M"
+            }
+        },
+        "Properties":{ 
+                "ImageId": { "Ref": "AMIID" },
+                "InstanceType": { "Ref": "InstanceType" },
+                "KeyName" : { "Ref" : "KeyName" },
+                "SecurityGroups":[ 
+                    { "Ref": "WebSecurityGroup"}
+                ],
+                "UserData"       : {"Fn::Base64" :
+                     { "Fn::Join" : [ "", 
+                        [
+                                "#!/bin/bash -v\n",
+                                "yum install -y aws-cfn-bootstrap\n",
+                
+                                "# Install the files and packages from the metadata\n",
+                                "/opt/aws/bin/cfn-init -v ",
+                                "         --stack ", { "Ref" : "AWS::StackName" },
+                                "         --resource WebServer ",
+                                "         --configsets InstallAndRun ",
+                                "         --region ", { "Ref" : "AWS::Region" }, "\n",
+
+                                "# Signal the status from cfn-init\n",
+                                "/opt/aws/bin/cfn-signal -e $? ",
+                                "         --stack ", { "Ref" : "AWS::StackName" },
+                                "         --resource WebServer ",
+                                "         --region ", { "Ref" : "AWS::Region" }, "\n"
+
+                        ]
+                     ]
+                   }
+                }
+        }
+      }
+   },
+
+   "Outputs":{ 
+      "WebServerURL": {
+            "Description": "URL of Web Server",
+            "Value": { "Fn::Join" : [ "", [ "http://", { "Fn::GetAtt" : [ "WebServer", "PublicDnsName" ] }, ":8080" ] ] }
+      }
+
+    }
+}
